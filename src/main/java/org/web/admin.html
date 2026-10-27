@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Админ-панель — Игровой сервер</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<style>
+  body { background: #12141a; }
+  .navbar-brand { font-weight: 600; }
+  .card.stat-card { border: 1px solid #2a2f3d; }
+  .stat-card h3 { font-size: 1.35rem; margin: 0; }
+  .stat-card .stat-label { color: #8b93a7; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+  .dropzone {
+    border: 2px dashed #4b5162; border-radius: .75rem; padding: 2.2rem 1rem; text-align: center;
+    color: #8b93a7; transition: all .15s ease; cursor: pointer; background: #191d26;
+  }
+  .dropzone.dragover { border-color: #6ea8fe; background: #1c2230; color: #cfe2ff; }
+  .dropzone i { font-size: 2rem; display: block; margin-bottom: .4rem; }
+  .table>:not(caption)>*>* { background-color: transparent; }
+  .tab-pane { padding-top: 1rem; }
+  .btn-accent { background: #6c5ce7; border-color: #6c5ce7; color: #fff; }
+  .btn-accent:hover { background: #5a4bd1; border-color: #5a4bd1; color: #fff; }
+  .badge-soft { border: 1px solid #343a46; }
+  .winner-cell { color: #ffd43b; font-weight: 600; }
+  .toast-container { z-index: 2000; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82em; }
+</style>
+</head>
+<body>
+
+<!-- ============ ЭКРАН ВХОДА ============ -->
+<div id="loginView" class="container" style="max-width:420px; margin-top:14vh">
+  <div class="card border-secondary shadow">
+    <div class="card-body p-4">
+      <h4 class="text-center mb-1"><i class="bi bi-controller"></i> Админ-панель</h4>
+      <p class="text-center text-secondary mb-4">Игровой сервер — управление и статистика</p>
+      <label class="form-label">Пароль администратора</label>
+      <input type="password" id="passwordInput" class="form-control form-control-lg mb-3" placeholder="Введите пароль" autocomplete="current-password">
+      <button class="btn btn-accent w-100 btn-lg" onclick="doLogin()">Войти</button>
+      <div id="loginError" class="text-danger text-center mt-3 d-none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ОСНОВНОЙ ИНТЕРФЕЙС ============ -->
+<div id="appView" class="d-none">
+  <nav class="navbar navbar-expand-lg" style="background:#181b23; border-bottom:1px solid #2a2f3d">
+    <div class="container-fluid px-4">
+      <span class="navbar-brand"><i class="bi bi-controller"></i> Админ-панель</span>
+      <div class="d-flex align-items-center gap-3">
+        <span id="dbBadge" class="badge badge-soft text-secondary">MySQL: …</span>
+        <span id="uptimeBadge" class="badge badge-soft text-secondary"></span>
+        <button class="btn btn-outline-secondary btn-sm" onclick="doLogout()"><i class="bi bi-box-arrow-right"></i> Выход</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid px-4 pb-5">
+    <ul class="nav nav-pills mt-3 gap-1" id="mainTabs">
+      <li class="nav-item"><a class="nav-link active" href="#" data-tab="dashboard"><i class="bi bi-speedometer2"></i> Дашборд</a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="maps"><i class="bi bi-map"></i> Карты</a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="players"><i class="bi bi-trophy"></i> Игроки</a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="matches"><i class="bi bi-clock-history"></i> Матчи</a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="settings"><i class="bi bi-sliders"></i> Настройки</a></li>
+    </ul>
+
+    <!-- ===== ДАШБОРД ===== -->
+    <div class="tab-pane" id="tab-dashboard">
+      <div class="row g-3 mb-3">
+        <div class="col-md-3 col-6">
+          <div class="card stat-card"><div class="card-body">
+            <div class="stat-label">Статус матча</div><h3 id="statMatch" class="text-secondary">—</h3>
+          </div></div>
+        </div>
+        <div class="col-md-3 col-6">
+          <div class="card stat-card"><div class="card-body">
+            <div class="stat-label">Время до конца</div><h3 id="statTime" class="mono">—</h3>
+          </div></div>
+        </div>
+        <div class="col-md-3 col-6">
+          <div class="card stat-card"><div class="card-body">
+            <div class="stat-label">Текущая карта</div><h3 id="statMap" style="font-size:1.1rem">—</h3>
+          </div></div>
+        </div>
+        <div class="col-md-3 col-6">
+          <div class="card stat-card"><div class="card-body">
+            <div class="stat-label">Игроков онлайн</div><h3 id="statOnline">—</h3>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="card mb-3"><div class="card-body">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <!-- НОВОЕ: запуск цикла матчей — виден только в состоянии «Не запущен» -->
+          <button class="btn btn-success btn-lg" id="runCycleBtn" onclick="runCycle()" style="display:none"><i class="bi bi-play-fill"></i> Запустить цикл матчей</button>
+          <button class="btn btn-danger" onclick="stopMatch()"><i class="bi bi-stop-circle"></i> Стоп</button>
+          <button class="btn btn-success" onclick="startMatch()"><i class="bi bi-lightning-fill"></i> Форс-старт</button>
+          <button class="btn btn-warning text-dark" onclick="restartMatch()"><i class="bi bi-arrow-repeat"></i> Рестарт цикла</button>
+          <button class="btn btn-accent" data-bs-toggle="modal" data-bs-target="#mapPickerModal" onclick="openMapPicker()"><i class="bi bi-map"></i> Выбрать карту</button>
+          <div class="vr d-none d-sm-block"></div>
+          <span class="text-secondary small">След. карта: <span id="nextMapInfo" class="text-info">—</span></span>
+          <span class="text-secondary small">Готовы: <span id="readyInfo" class="text-white">—</span></span>
+          <span class="text-secondary small ms-auto">Матчей в БД: <span id="statMatches" class="text-white">—</span> · Игроков в БД: <span id="statPlayers" class="text-white">—</span> · Карт: <span id="statMaps" class="text-white">—</span></span>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="card-body">
+        <h6 class="card-title"><i class="bi bi-people"></i> Игроки онлайн</h6>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>ID</th><th>Ник</th><th>IP</th><th>HP</th><th>Убийства</th><th>Смерти</th><th>Готов</th><th>Статус</th><th class="text-end">Действия</th></tr></thead>
+            <tbody id="onlineTableBody"><tr><td colspan="9" class="text-center text-secondary py-4">Нет игроков на сервере</td></tr></tbody>
+          </table>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- ===== КАРТЫ ===== -->
+    <div class="tab-pane d-none" id="tab-maps">
+      <div class="row g-3">
+        <div class="col-lg-5">
+          <div class="card h-100"><div class="card-body">
+            <h6 class="card-title"><i class="bi bi-cloud-arrow-up"></i> Загрузка карты (.slop)</h6>
+            <div class="dropzone mb-3" id="dropzone" onclick="document.getElementById('fileInput').click()">
+              <i class="bi bi-file-earmark-zip"></i>
+              Перетащите файл карты сюда<br><span class="small">или нажмите, чтобы выбрать · формат <b>.slop</b></span>
+            </div>
+            <input type="file" id="fileInput" accept=".slop" multiple class="d-none">
+            <h6 class="card-title mt-2"><i class="bi bi-link-45deg"></i> Или добавить по ссылке</h6>
+            <input type="text" id="newMapName" class="form-control mb-2" placeholder="Название карты">
+            <input type="text" id="newMapUrl" class="form-control mb-3" placeholder="URL для скачивания (http://...)">
+            <button class="btn btn-accent w-100" onclick="addMapManual()"><i class="bi bi-plus-lg"></i> Добавить карту</button>
+          </div></div>
+        </div>
+        <div class="col-lg-7">
+          <div class="card h-100"><div class="card-body">
+            <h6 class="card-title"><i class="bi bi-collection"></i> Карты на сервере</h6>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <thead><tr><th>#</th><th>Название</th><th>Размер</th><th>Добавлена</th><th class="text-end">Действия</th></tr></thead>
+                <tbody id="mapsTableBody"></tbody>
+              </table>
+            </div>
+            <div class="form-text mt-2">«Сейчас» — перезапустить цикл с этой картой прямо сейчас. Ссылка на скачивание отдаётся клиентам автоматически.</div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== ИГРОКИ ===== -->
+    <div class="tab-pane d-none" id="tab-players">
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="card-title"><i class="bi bi-trophy"></i> Рейтинг игроков (вся статистика из матчей)</h6>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>#</th><th>Ник</th><th>Матчей</th><th>Убийств</th><th>Смертей</th><th>K/D</th><th>Последний вход</th></tr></thead>
+            <tbody id="playersTableBody"></tbody>
+          </table>
+        </div>
+      </div></div>
+
+      <!-- НОВОЕ: бан-лист -->
+      <div class="card"><div class="card-body">
+        <h6 class="card-title">
+          <i class="bi bi-slash-circle"></i> Баны (по IP)
+          <span class="badge bg-danger ms-1" id="bansBadge" style="display:none">0</span>
+        </h6>
+        <div class="row g-2 mb-3">
+          <div class="col-md-4 col-5">
+            <input type="text" id="banIpInput" class="form-control mono" placeholder="IP-адрес (напр. 1.2.3.4)">
+          </div>
+          <div class="col-md-5 col-7">
+            <input type="text" id="banReasonInput" class="form-control" placeholder="Причина (необязательно)">
+          </div>
+          <div class="col-md-3 col-12">
+            <button class="btn btn-outline-danger w-100" onclick="banByIp()"><i class="bi bi-slash-circle"></i> Бан по IP</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>IP</th><th>Ник при бане</th><th>Причина</th><th>Дата</th><th class="text-end">Действия</th></tr></thead>
+            <tbody id="bansTableBody"><tr><td colspan="5" class="text-center text-secondary py-4">Активных банов нет</td></tr></tbody>
+          </table>
+        </div>
+        <div class="form-text mt-2">Бан по нику (кнопка ⛔ в списке игроков онлайн на дашборде) банит по IP этого игрока — смена ника не поможет. Баны с БД переживают рестарт сервера.</div>
+      </div></div>
+    </div>
+
+    <!-- ===== МАТЧИ ===== -->
+    <div class="tab-pane d-none" id="tab-matches">
+      <div class="card"><div class="card-body">
+        <h6 class="card-title"><i class="bi bi-clock-history"></i> История матчей (последние 50)</h6>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>#</th><th>Начало</th><th>Карта</th><th>Статус</th><th>Игроков</th><th>Победитель</th><th></th></tr></thead>
+            <tbody id="matchesTableBody"></tbody>
+          </table>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- ===== НАСТРОЙКИ ===== -->
+    <div class="tab-pane d-none" id="tab-settings">
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="card h-100"><div class="card-body">
+            <h6 class="card-title"><i class="bi bi-sliders"></i> Игровые настройки</h6>
+            <form onsubmit="saveSettings(event)">
+              <div class="mb-3">
+                <label class="form-label" for="setMinStart">Минимум игроков для старта матча</label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-person-check"></i></span>
+                  <input type="number" class="form-control" id="setMinStart" min="1" max="8" step="1" required>
+                  <span class="input-group-text">из 8</span>
+                </div>
+                <div class="form-text">Сколько игроков должно загрузиться, чтобы матч начался автоматически (1–8). При 1 матч стартует даже с одиночным игроком.</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="setMaxPlayers">Максимальное количество игроков</label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-people"></i></span>
+                  <input type="number" class="form-control" id="setMaxPlayers" min="2" max="64" step="1" required>
+                  <span class="input-group-text">из 64</span>
+                </div>
+                <div class="form-text">Лимит одновременных игроков на сервере (2–64). Новые подключения отклоняются при заполненности. Не может быть меньше минимума для старта.</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="setDuration">Время матча</label>
+                <div class="input-group">
+                  <input type="number" class="form-control" id="setDuration" min="1" max="120" step="1" required>
+                  <span class="input-group-text">минут (1–120)</span>
+                </div>
+                <div class="form-text" id="durationHint">Текущее значение: —</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="setConnHash">Хеш соединения</label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-key"></i></span>
+                  <input type="text" class="form-control font-monospace" id="setConnHash" placeholder="0 — отключён" maxlength="16" spellcheck="false" autocomplete="off">
+                </div>
+                <div class="form-text">В формате HEX (0–9, A–F, до 16 цифр). 0 или пусто — проверка отключена. Если задан — при логине отключаются клиенты с другим хешем.</div>
+              </div>
+              <button type="submit" class="btn btn-accent" id="saveSettingsBtn"><i class="bi bi-check-lg"></i> Сохранить настройки</button>
+            </form>
+          </div></div>
+        </div>
+        <div class="col-lg-6">
+          <div class="card h-100"><div class="card-body">
+            <h6 class="card-title"><i class="bi bi-info-circle"></i> Как применяются настройки</h6>
+            <ul class="mb-2 text-secondary">
+              <li class="mb-2"><b class="text-white">Минимум для старта</b> — проверяется при загрузке каждого игрока: как только готовых становится достаточно, матч стартует автоматически (и по истечении таймаута загрузки, если готовых хватает).</li>
+              <li class="mb-2"><b class="text-white">Максимум игроков</b> — действует сразу: при заполненном сервере новые клиенты не смогут войти. Уже подключённые игроки не отключаются.</li>
+              <li class="mb-2"><b class="text-white">Время матча</b> — используется в следующем матче. Если матч идёт прямо сейчас, его таймер перезапускается на новую длительность (удобно, чтобы продлить или сократить текущий матч).</li>
+              <li class="mb-2"><b class="text-white">Хеш соединения</b> — в настройках хранится как HEX, на сервере преобразуется в long. 0 — проверка выключена. Если задан — при логине сравнивается с hash клиента, несовпадающие отключаются.</li>
+              <li><b class="text-white">Сохранение</b> — настройки пишутся в <span class="mono">admin_config.properties</span> и переживают рестарт сервера. База данных для них не нужна.</li>
+            </ul>
+            <div class="alert alert-warning bg-warning-subtle border-warning text-body small mb-0" role="alert">
+              <i class="bi bi-exclamation-triangle"></i> Уменьшение максимума ниже текущего онлайна не выгоняет игроков — просто новые не войдут, пока не освободится место.
+            </div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== МОДАЛКА: ВЫБОР КАРТЫ ===== -->
+<div class="modal fade" id="mapPickerModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-map"></i> Выбор карты</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Карта для матча</label>
+        <select class="form-select mb-3" id="mapPickerSelect"></select>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-primary flex-fill" onclick="assignNextMap()"><i class="bi bi-skip-forward"></i> На следующий матч</button>
+          <button class="btn btn-accent flex-fill" onclick="applyMapNow()"><i class="bi bi-lightning"></i> Применить сейчас</button>
+        </div>
+        <div class="form-text mt-2">«Применить сейчас» перезапускает цикл немедленно: текущий матч прервётся без статистики, всем придёт новая карта.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== МОДАЛКА: ДЕТАЛИ МАТЧА ===== -->
+<div class="modal fade" id="matchDetailsModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-list-ol"></i> Результаты матча #<span id="matchDetailsId"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>#</th><th>Игрок</th><th>Убийства</th><th>Смерти</th></tr></thead>
+          <tbody id="matchDetailsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+'use strict';
+const TOKEN_KEY = 'adminToken';
+let currentTab = 'dashboard';
+let dashboardTimer = null;
+
+// ================= API =================
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({}, opts.headers || {});
+  const t = getToken();
+  if (t) opts.headers['X-Auth-Token'] = t;
+  if (opts.json !== undefined) {
+    opts.method = opts.method || 'POST';
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.json);
+    delete opts.json;
+  }
+  const res = await fetch(path, opts);
+  if (res.status === 401) { showLogin(); throw new Error('unauthorized'); }
+  return res;
+}
+async function apiJson(path, opts = {}) {
+  const res = await api(path, opts);
+  return res.json();
+}
+
+// ================= ВХОД/ВЫХОД =================
+function showLogin() {
+  localStorage.removeItem(TOKEN_KEY);
+  document.getElementById('loginView').classList.remove('d-none');
+  document.getElementById('appView').classList.add('d-none');
+  if (dashboardTimer) { clearInterval(dashboardTimer); dashboardTimer = null; }
+}
+function showApp() {
+  document.getElementById('loginView').classList.add('d-none');
+  document.getElementById('appView').classList.remove('d-none');
+  switchTab('dashboard');
+  if (!dashboardTimer) dashboardTimer = setInterval(() => { if (currentTab === 'dashboard') refreshDashboard(); }, 3000);
+}
+async function doLogin() {
+  const pwd = document.getElementById('passwordInput').value;
+  const errEl = document.getElementById('loginError');
+  errEl.classList.add('d-none');
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd })
+    });
+    const data = await res.json();
+    if (data.ok) { localStorage.setItem(TOKEN_KEY, data.token); showApp(); }
+    else { errEl.textContent = data.error || 'Ошибка входа'; errEl.classList.remove('d-none'); }
+  } catch (e) { errEl.textContent = 'Сервер недоступен'; errEl.classList.remove('d-none'); }
+}
+function doLogout() { showLogin(); }
+
+// ================= ВКЛАДКИ =================
+document.querySelectorAll('#mainTabs a').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    switchTab(a.dataset.tab);
+  });
+});
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('#mainTabs a').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
+  ['dashboard', 'maps', 'players', 'matches', 'settings'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('d-none', t !== tab);
+  });
+  if (tab === 'dashboard') refreshDashboard();
+  if (tab === 'maps') loadMaps();
+  if (tab === 'players') { loadPlayers(); loadBans(); }
+  if (tab === 'matches') loadMatches();
+  if (tab === 'settings') loadSettings();
+}
+
+// ================= ДАШБОРД =================
+function fmtTime(sec) {
+  sec = Math.max(0, sec | 0);
+  return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+function fmtSize(bytes) {
+  if (bytes > 1048576) return (bytes / 1048576).toFixed(1) + ' МБ';
+  if (bytes > 1024) return Math.round(bytes / 1024) + ' КБ';
+  return bytes + ' Б';
+}
+function fmtUptime(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return h > 0 ? h + ' ч ' + m + ' мин' : m + ' мин';
+}
+
+async function refreshDashboard() {
+  try {
+    const s = await apiJson('/api/status');
+    const st = document.getElementById('statMatch');
+    // НОВОЕ: 4 состояния сервера — «Не запущен» / «Пауза между матчами» / «Лобби» / «Идёт матч»
+    if (s.matchInProgress) {
+      st.textContent = 'Идёт матч'; st.className = 'text-success';
+    } else if (s.waitingNextMatch) {
+      st.textContent = 'Пауза между матчами'; st.className = 'text-info';
+    } else if (s.cycleRunning) {
+      st.textContent = 'Цикл: лобби'; st.className = 'text-primary';
+    } else {
+      st.textContent = 'Не запущен'; st.className = 'text-warning';
+    }
+    // НОВОЕ: кнопка «Запустить цикл матчей» видна только когда цикл остановлен
+    document.getElementById('runCycleBtn').style.display = s.cycleRunning ? 'none' : '';
+    document.getElementById('statTime').textContent =
+      (s.matchInProgress || s.waitingNextMatch) ? fmtTime(s.timeLeft) : '—';
+    document.getElementById('statMap').textContent = s.currentMap;
+    document.getElementById('statOnline').textContent = s.playersOnline + ' / ' + s.maxPlayers;
+    document.getElementById('statMatches').textContent = s.totalMatches;
+    document.getElementById('statPlayers').textContent = s.totalPlayers;
+    document.getElementById('statMaps').textContent = s.mapsCount;
+    document.getElementById('nextMapInfo').textContent = s.nextMap.mode === 'random'
+      ? '🎲 Случайная (не текущая)' : '🗺 ' + s.nextMap.name;
+    document.getElementById('readyInfo').textContent = s.readyCount + ' / ' + s.maxFromStart + ' (мин. для старта)';
+    const dbBadge = document.getElementById('dbBadge');
+    dbBadge.textContent = s.dbAvailable ? 'MySQL: онлайн' : 'MySQL: недоступен';
+    dbBadge.className = 'badge ' + (s.dbAvailable ? 'bg-success' : 'bg-danger');
+    document.getElementById('uptimeBadge').textContent = 'Аптайм: ' + fmtUptime(s.uptimeSeconds);
+
+    const p = await apiJson('/api/players/online');
+    renderOnline(p.players);
+  } catch (e) { /* сервер недоступен — попробуем в следующий тик */ }
+}
+
+function renderOnline(players) {
+  const tb = document.getElementById('onlineTableBody');
+  if (!players || !players.length) {
+    tb.innerHTML = '<tr><td colspan="9" class="text-center text-secondary py-4">Нет игроков на сервере</td></tr>';
+    return;
+  }
+  tb.innerHTML = players.map(p => '<tr>' +
+    '<td class="text-secondary">' + p.id + '</td>' +
+    '<td><i class="bi bi-person-circle me-1 text-secondary"></i>' + esc(p.name) + '</td>' +
+    '<td class="mono text-secondary">' + (p.ip || '—') + '</td>' +
+    '<td>' + p.health + '</td>' +
+    '<td>' + p.kills + '</td>' +
+    '<td>' + p.deaths + '</td>' +
+    '<td>' + (p.isReady ? '<span class="badge bg-success">да</span>' : '<span class="badge bg-secondary">нет</span>') + '</td>' +
+    '<td>' + (p.isDead ? '<span class="badge bg-danger">убит</span>' : '<span class="badge bg-info text-dark">жив</span>') +
+      (p.attacksDisabled ? ' <span class="badge bg-dark border border-secondary" title="Обработка атак отключена администратором — урон другим не наносится">атаки выкл</span>' : '') + '</td>' +
+    '<td class="text-end text-nowrap">' +
+      '<button class="btn btn-sm btn-outline-warning me-1" title="Убить игрока" onclick="killPlayer(\'' + esc(p.name) + '\')"><i class="bi bi-heartbreak"></i></button>' +
+      '<button class="btn btn-sm ' + (p.attacksDisabled ? 'btn-success' : 'btn-outline-info') + ' me-1" title="' + (p.attacksDisabled ? 'Включить атаки обратно (сейчас отключены админом)' : 'Отключить обработку атак — игрок не сможет наносить урон другим') + '" onclick="togglePlayerAttacks(\'' + esc(p.name) + '\', ' + (p.attacksDisabled ? 'false' : 'true') + ')"><i class="bi bi-explosion"></i></button>' +
+      '<button class="btn btn-sm btn-outline-secondary me-1" title="Кикнуть (отключить)" onclick="kickPlayer(\'' + esc(p.name) + '\')"><i class="bi bi-box-arrow-left"></i></button>' +
+      '<button class="btn btn-sm btn-outline-danger" title="Забанить по IP" onclick="banPlayer(\'' + esc(p.name) + '\')"><i class="bi bi-slash-circle"></i></button>' +
+    '</td></tr>').join('');
+}
+
+// ================= НОВОЕ: МОДЕРАЦИЯ ИГРОКОВ =================
+async function killPlayer(name) {
+  if (!confirm('Убить игрока «' + name + '»? Он возродится через 10 секунд.')) return;
+  const r = await apiJson('/api/player/kill', { json: { name: name } });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'danger');
+  refreshDashboard();
+}
+
+async function kickPlayer(name) {
+  if (!confirm('Кикнуть игрока «' + name + '»? Он сможет зайти снова.')) return;
+  const r = await apiJson('/api/player/kick', { json: { name: name } });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'danger');
+  refreshDashboard();
+}
+
+async function banPlayer(name) {
+  const reason = prompt('Бан игрока «' + name + '» по IP. Причина (необязательно):');
+  if (reason === null) return;   // отмена
+  if (!confirm('Забанить «' + name + '»? Игрок будет отключён и не сможет войти с этого IP.')) return;
+  const r = await apiJson('/api/player/ban', { json: { name: name, reason: reason } });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'danger');
+  refreshDashboard();
+}
+
+// НОВОЕ: включение/отключение обработки атак игрока (без подтверждения — действие мгновенно обратимое)
+async function togglePlayerAttacks(name, disabled) {
+  const r = await apiJson('/api/player/attacks', { json: { name: name, disabled: disabled } });
+  toast(r.ok ? r.message : r.error, r.ok ? (disabled ? 'warning' : 'success') : 'danger');
+  refreshDashboard();
+}
+
+async function banByIp() {
+  const ip = document.getElementById('banIpInput').value.trim();
+  const reason = document.getElementById('banReasonInput').value.trim();
+  if (!ip) { toast('Укажите IP-адрес', 'warning'); return; }
+  if (!confirm('Забанить IP ' + ip + '? Клиенты с этого IP не смогут подключаться.')) return;
+  const r = await apiJson('/api/player/ban', { json: { ip: ip, reason: reason } });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'danger');
+  if (r.ok) {
+    document.getElementById('banIpInput').value = '';
+    document.getElementById('banReasonInput').value = '';
+    loadBans();
+  }
+}
+
+async function loadBans() {
+  try {
+    const r = await apiJson('/api/bans');
+    const tb = document.getElementById('bansTableBody');
+    const badge = document.getElementById('bansBadge');
+    badge.style.display = r.bans.length ? '' : 'none';
+    badge.textContent = r.bans.length;
+    if (!r.bans.length) {
+      tb.innerHTML = '<tr><td colspan="5" class="text-center text-secondary py-4">Активных банов нет</td></tr>';
+      return;
+    }
+    tb.innerHTML = r.bans.map(b => '<tr>' +
+      '<td class="mono"><i class="bi bi-slash-circle me-1 text-danger"></i>' + esc(b.ip) + '</td>' +
+      '<td>' + (b.playerName ? esc(b.playerName) : '<span class="text-secondary">—</span>') + '</td>' +
+      '<td class="text-secondary">' + (b.reason ? esc(b.reason) : '—') + '</td>' +
+      '<td class="text-secondary small">' + b.bannedAt + '</td>' +
+      '<td class="text-end">' +
+        '<button class="btn btn-sm btn-outline-success" title="Разбанить" onclick="unbanIp(\'' + esc(b.ip) + '\')"><i class="bi bi-check-lg"></i> Разбанить</button>' +
+      '</td></tr>').join('');
+  } catch (e) { toast('Не удалось загрузить бан-лист', 'danger'); }
+}
+
+async function unbanIp(ip) {
+  if (!confirm('Снять бан с IP ' + ip + '?')) return;
+  const r = await apiJson('/api/bans?ip=' + encodeURIComponent(ip), { method: 'DELETE' });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'danger');
+  loadBans();
+}
+
+async function stopMatch() {
+  if (!confirm('Стоп: остановить матч/цикл? Статистика будет сохранена, сервер будет ждать ручного запуска цикла.')) return;
+  const r = await apiJson('/api/match/stop', { method: 'POST' });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'warning');
+  refreshDashboard();
+}
+
+// НОВОЕ: запуск цикла матчей из состояния «Не запущен» (подтверждение запуска)
+async function runCycle() {
+  if (!confirm('Запустить цикл матчей? Игрокам будет разослана карта, дальше матчи идут автоматически (после каждого матча пауза и новая карта), пока вы не нажмёте «Стоп».')) return;
+  const r = await apiJson('/api/match/run', { method: 'POST' });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'warning');
+  refreshDashboard();
+}
+async function startMatch() {
+  if (!confirm('Начать матч немедленно, не дожидаясь готовности игроков?')) return;
+  const r = await apiJson('/api/match/start', { method: 'POST' });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'warning');
+  refreshDashboard();
+}
+async function restartMatch() {
+  if (!confirm('Полный перезапуск цикла? Текущий матч прервётся БЕЗ статистики.')) return;
+  const r = await apiJson('/api/match/restart', { method: 'POST' });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'warning');
+  refreshDashboard();
+}
+
+// ================= НАСТРОЙКИ =================
+function durationHintText(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m > 0 ? (s > 0 ? m + ' мин ' + s + ' сек' : m + ' минут') : s + ' секунд';
+}
+
+async function loadSettings() {
+  try {
+    const s = await apiJson('/api/settings');
+    document.getElementById('setMinStart').value = s.minPlayersStart;
+    document.getElementById('setMinStart').min = s.minPlayersStartMin;
+    document.getElementById('setMinStart').max = s.minPlayersStartMax;
+    document.getElementById('setMaxPlayers').value = s.maxPlayers;
+    document.getElementById('setMaxPlayers').min = s.maxPlayersMin;
+    document.getElementById('setMaxPlayers').max = s.maxPlayersMax;
+    document.getElementById('setConnHash').value = s.connHash || '0';
+    const durMin = Math.max(1, Math.round(s.matchDuration / 60));
+    const durEl = document.getElementById('setDuration');
+    durEl.value = durMin;
+    durEl._seconds = s.matchDuration;   // запоминаем точное значение
+    document.getElementById('durationHint').textContent =
+      'Текущее значение: ' + durationHintText(s.matchDuration) + '. Вводите целые минуты — округлите при необходимости.';
+  } catch (e) { toast('Не удалось загрузить настройки', 'danger'); }
+}
+
+async function saveSettings(ev) {
+  ev.preventDefault();
+  const minStart = parseInt(document.getElementById('setMinStart').value, 10);
+  const maxP = parseInt(document.getElementById('setMaxPlayers').value, 10);
+  const durEl = document.getElementById('setDuration');
+  const durMin = parseInt(durEl.value, 10);
+  if (!(minStart >= 1 && minStart <= 8)) { toast('Минимум игроков для старта: от 1 до 8', 'warning'); return; }
+  if (!(maxP >= 2 && maxP <= 64)) { toast('Максимум игроков: от 2 до 64', 'warning'); return; }
+  if (!(durMin >= 1 && durMin <= 120)) { toast('Время матча: от 1 до 120 минут', 'warning'); return; }
+  if (maxP < minStart) { toast('Максимум игроков не может быть меньше минимума для старта', 'warning'); return; }
+
+  // НОВОЕ: хеш соединения — HEX (1–16 цифр), пусто/0 — проверка отключена
+  const hashRaw = document.getElementById('setConnHash').value.trim();
+  if (hashRaw !== '' && !/^[0-9a-fA-F]{1,16}$/.test(hashRaw)) {
+    toast('Хеш соединения: 1–16 HEX-цифр (0–9, A–F) или 0, чтобы отключить', 'warning');
+    return;
+  }
+  const connHash = (hashRaw === '' ? '0' : hashRaw);
+
+  const seconds = durMin * 60;
+  const btn = document.getElementById('saveSettingsBtn');
+  btn.disabled = true;
+  try {
+    const r = await apiJson('/api/settings', {
+      json: { minPlayersStart: minStart, maxPlayers: maxP, matchDuration: seconds, connHash: connHash }
+    });
+    if (r.ok) {
+      toast(r.message, 'success');
+      // перечитываем точное сохранённое значение
+      const s = await apiJson('/api/settings');
+      durEl._seconds = s.matchDuration;
+      document.getElementById('durationHint').textContent = 'Текущее значение: ' + durationHintText(s.matchDuration);
+      if (currentTab === 'dashboard') refreshDashboard();
+    } else {
+      toast(r.error || 'Ошибка сохранения', 'danger');
+    }
+  } catch (e) { toast('Ошибка запроса', 'danger'); }
+  finally { btn.disabled = false; }
+}
+
+// ================= КАРТЫ =================
+async function loadMaps() {
+  try {
+    const r = await apiJson('/api/maps');
+    const tb = document.getElementById('mapsTableBody');
+    if (!r.maps.length) {
+      tb.innerHTML = '<tr><td colspan="5" class="text-center text-secondary py-4">Карт пока нет — загрузите .slop или добавьте по ссылке</td></tr>';
+      return;
+    }
+    tb.innerHTML = r.maps.map(m => '<tr>' +
+      '<td class="text-secondary">' + m.id + '</td>' +
+      '<td><i class="bi bi-map me-1 text-info"></i><b>' + esc(m.mapName) + '</b>' +
+        (m.fileName ? '<br><span class="mono text-secondary">' + esc(m.fileName) + '</span>' : '') + '</td>' +
+      '<td>' + (m.fileSize > 0 ? fmtSize(m.fileSize) : '—') + '</td>' +
+      '<td class="text-secondary small">' + m.addedAt + '</td>' +
+      '<td class="text-end text-nowrap">' +
+        '<button class="btn btn-sm btn-outline-info me-1" title="Играть сейчас" onclick="applyMapNowById(' + m.id + ', \'' + esc(m.mapName) + '\')"><i class="bi bi-lightning"></i> Сейчас</button>' +
+        '<button class="btn btn-sm btn-outline-danger" title="Удалить" onclick="deleteMap(' + m.id + ', \'' + esc(m.mapName) + '\')"><i class="bi bi-trash"></i></button>' +
+      '</td></tr>').join('');
+  } catch (e) { toast('Не удалось загрузить список карт', 'danger'); }
+}
+
+// Drag & drop
+const dz = document.getElementById('dropzone');
+['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('dragover'); }));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('dragover'); }));
+dz.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+document.getElementById('fileInput').addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
+
+function handleFiles(files) {
+  for (const f of files) {
+    if (!f.name.toLowerCase().endsWith('.slop')) { toast('Файл ' + f.name + ' не .slop', 'danger'); continue; }
+    uploadMap(f);
+  }
+}
+async function uploadMap(file) {
+  toast('Загрузка «' + file.name + '» (' + fmtSize(file.size) + ')…', 'info');
+  try {
+    const res = await api('/api/maps/upload?name=' + encodeURIComponent(file.name), { method: 'POST', body: file });
+    const r = await res.json();
+    if (r.ok) { toast(r.message, 'success'); loadMaps(); }
+    else toast(r.error, 'danger');
+  } catch (e) { toast('Ошибка загрузки файла', 'danger'); }
+}
+
+async function addMapManual() {
+  const name = document.getElementById('newMapName').value.trim();
+  const url = document.getElementById('newMapUrl').value.trim();
+  if (!name || !url) { toast('Заполните название и ссылку', 'warning'); return; }
+  const r = await apiJson('/api/maps/add', { json: { mapName: name, urlDownload: url } });
+  if (r.ok) {
+    toast(r.message, 'success');
+    document.getElementById('newMapName').value = '';
+    document.getElementById('newMapUrl').value = '';
+    loadMaps();
+  } else toast(r.error, 'danger');
+}
+
+async function deleteMap(id, name) {
+  if (!confirm('Удалить карту «' + name + '»? Файл .slop тоже будет удалён.')) return;
+  const r = await apiJson('/api/maps?id=' + id, { method: 'DELETE' });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'danger');
+  loadMaps();
+}
+
+// ================= ВЫБОР КАРТЫ =================
+async function openMapPicker() {
+  try {
+    const r = await apiJson('/api/maps');
+    const sel = document.getElementById('mapPickerSelect');
+    sel.innerHTML = '<option value="">🎲 Случайная (не текущая)</option>' +
+      r.maps.map(m => '<option value="' + m.id + '">' + esc(m.mapName) + '</option>').join('');
+  } catch (e) { toast('Не удалось загрузить карты', 'danger'); }
+}
+function pickerValue() {
+  const v = document.getElementById('mapPickerSelect').value;
+  return v === '' ? null : parseInt(v, 10);
+}
+async function assignNextMap() {
+  const r = await apiJson('/api/match/nextmap', { json: { mapId: pickerValue() } });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'danger');
+  bootstrap.Modal.getInstance(document.getElementById('mapPickerModal')).hide();
+  refreshDashboard();
+}
+async function applyMapNow() {
+  if (!confirm('Применить карту сейчас? Текущий матч прервётся без статистики.')) return;
+  const r = await apiJson('/api/match/apply-map', { json: { mapId: pickerValue() } });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'danger');
+  bootstrap.Modal.getInstance(document.getElementById('mapPickerModal')).hide();
+  refreshDashboard();
+}
+async function applyMapNowById(id, name) {
+  if (!confirm('Запустить цикл с картой «' + name + '» сейчас? Текущий матч прервётся без статистики.')) return;
+  const r = await apiJson('/api/match/apply-map', { json: { mapId: id } });
+  toast(r.ok ? r.message : r.error, r.ok ? 'success' : 'danger');
+  refreshDashboard();
+}
+
+// ================= ИГРОКИ =================
+async function loadPlayers() {
+  try {
+    const r = await apiJson('/api/players');
+    const tb = document.getElementById('playersTableBody');
+    if (!r.players.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="text-center text-secondary py-4">В базе ещё нет игроков — статистика появится после первого матча</td></tr>';
+      return;
+    }
+    tb.innerHTML = r.players.map((p, i) => '<tr>' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td><i class="bi bi-person-circle me-1 text-secondary"></i><b>' + esc(p.name) + '</b></td>' +
+      '<td>' + p.totalMatches + '</td>' +
+      '<td><span class="badge bg-success">' + p.totalKills + '</span></td>' +
+      '<td><span class="badge bg-danger">' + p.totalDeaths + '</span></td>' +
+      '<td>' + p.kd.toFixed(2) + '</td>' +
+      '<td class="text-secondary small">' + p.lastSeen + '</td>' +
+      '</tr>').join('');
+  } catch (e) { toast('База данных недоступна', 'danger'); }
+}
+
+// ================= МАТЧИ =================
+const STATUS_BADGES = {
+  'IN_PROGRESS': '<span class="badge bg-primary">идёт</span>',
+  'FINISHED': '<span class="badge bg-success">завершён</span>',
+  'STOPPED': '<span class="badge bg-warning text-dark">остановлен админом</span>',
+  'ABORTED': '<span class="badge bg-secondary">прерван</span>'
+};
+async function loadMatches() {
+  try {
+    const r = await apiJson('/api/matches');
+    const tb = document.getElementById('matchesTableBody');
+    if (!r.matches.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="text-center text-secondary py-4">Матчей пока не было</td></tr>';
+      return;
+    }
+    tb.innerHTML = r.matches.map(m => '<tr>' +
+      '<td class="text-secondary">' + m.id + '</td>' +
+      '<td class="small">' + m.startedAt + '</td>' +
+      '<td><i class="bi bi-map me-1 text-info"></i>' + esc(m.mapName) + '</td>' +
+      '<td>' + (STATUS_BADGES[m.status] || m.status) + '</td>' +
+      '<td>' + m.playersCount + '</td>' +
+      '<td class="winner-cell">' + (m.winnerName ? '🏆 ' + esc(m.winnerName) + ' <span class="text-secondary small">(' + m.winnerKills + ')</span>' : '—') + '</td>' +
+      '<td class="text-end">' + (m.status !== 'IN_PROGRESS' && m.playersCount > 0
+        ? '<button class="btn btn-sm btn-outline-secondary" onclick="showMatchDetails(' + m.id + ')"><i class="bi bi-list-ol"></i> Детали</button>' : '') + '</td>' +
+      '</tr>').join('');
+  } catch (e) { toast('База данных недоступна', 'danger'); }
+}
+async function showMatchDetails(id) {
+  try {
+    const r = await apiJson('/api/matches/' + id);
+    document.getElementById('matchDetailsId').textContent = id;
+    const tb = document.getElementById('matchDetailsBody');
+    tb.innerHTML = r.stats.length
+      ? r.stats.map((s, i) => '<tr>' +
+          '<td>' + (i + 1) + '</td>' +
+          '<td><b>' + esc(s.playerName) + '</b></td>' +
+          '<td><span class="badge bg-success">' + s.kills + '</span></td>' +
+          '<td><span class="badge bg-danger">' + s.deaths + '</span></td>' +
+          '</tr>').join('')
+      : '<tr><td colspan="4" class="text-center text-secondary py-3">Нет данных</td></tr>';
+    new bootstrap.Modal(document.getElementById('matchDetailsModal')).show();
+  } catch (e) { toast('Не удалось загрузить детали матча', 'danger'); }
+}
+
+// ================= УТИЛИТЫ =================
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function toast(msg, type) {
+  type = type || 'primary';
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast align-items-center text-bg-' + type + ' border-0';
+  el.innerHTML = '<div class="d-flex"><div class="toast-body">' + msg +
+    '</div><button class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>';
+  c.appendChild(el);
+  const t = new bootstrap.Toast(el, { delay: 4500 });
+  el.addEventListener('hidden.bs.toast', () => el.remove());
+  t.show();
+}
+
+// ================= ИНИЦИАЛИЗАЦИЯ =================
+document.getElementById('passwordInput').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+window.addEventListener('load', async () => {
+  if (getToken()) {
+    try {
+      const res = await fetch('/api/status', { headers: { 'X-Auth-Token': getToken() } });
+      if (res.status === 401) showLogin();
+      else showApp();
+    } catch (e) { showLogin(); }
+  } else showLogin();
+});
+</script>
+</body>
+</html>
