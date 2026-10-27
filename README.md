@@ -75,7 +75,7 @@ game.match-duration=180
 
 ## Запуск
 
-1. Скачайте последний билд из раздела [Releases](https://github.com/VERTEXSoftware/JoomClient/archive/refs/heads/main.zip).
+1. Скачайте последний билд из раздела [Releases](https://github.com/VERTEXSoftware/JoomServerSource/archive/refs/heads/main.zip).
 2. Распакуйте архив в удобную папку.
 3. Соберите проект.
 4. Переместите папку **web** к **jar** файлу.
